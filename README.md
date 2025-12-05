@@ -181,13 +181,30 @@ Orders are processed in Prisma transactions ensuring:
 
 ### Vercel (Recommended)
 
-1. Push to GitHub
+See **[VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)** for complete deployment guide.
+
+**Quick Steps:**
+1. Push code to GitHub
 2. Import project in Vercel
-3. Add environment variables
-4. Deploy
+3. Add environment variables (see below)
+4. Set up PostgreSQL database
+5. Run `prisma db push` to create schema
+6. Run `prisma db seed` to seed data
+7. Deploy!
+
+### Required Environment Variables on Vercel
+
+```env
+DATABASE_URL="postgresql://..."
+NEXTAUTH_URL="https://your-app.vercel.app"
+NEXTAUTH_SECRET="generate-with-openssl-rand-base64-32"
+GEMINI_API_KEY="your-api-key" (optional)
+ADMIN_EMAIL="admin@example.com"
+ADMIN_PASSWORD="admin123"
+```
 
 ### Database
-Use Vercel Postgres, Supabase, or any PostgreSQL provider.
+Use **Vercel Postgres** (recommended), Supabase, Railway, or any PostgreSQL provider.
 
 ## 📝 Scripts
 
