@@ -1,0 +1,122 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FoodItem {
+  id          String          @id @default(cuid())
+  name        String          @unique
+  price       Float
+  description String
+  image       String
+  ingredients FoodIngredient[]
+  orderItems  OrderItem[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model Ingredient {
+  id            String          @id @default(cuid())
+  name          String          @unique
+  quantity      Float           @default(0)
+  expiryDate    DateTime?
+  threshold     Float           @default(10)
+  unit          String          @default("kg")
+  foodItems     FoodIngredient[]
+  aiAlerts      AIAlert[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model FoodIngredient {
+  id           String     @id @default(cuid())
+  foodItemId   String
+  ingredientId String
+  qtyRequired  Float
+  foodItem     FoodItem   @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([foodItemId, ingredientId])
+  @@index([foodItemId])
+  @@index([ingredientId])
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  total     Float
+  status    OrderStatus @default(PENDING)
+  items     OrderItem[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([createdAt])
+  @@index([status])
+}
+
+model OrderItem {
+  id         String    @id @default(cuid())
+  orderId    String
+  foodItemId String
+  quantity   Int
+  price      Float
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  foodItem   FoodItem  @relation(fields: [foodItemId], references: [id])
+
+  @@index([orderId])
+  @@index([foodItemId])
+}
+
+model AIAlert {
+  id           String        @id @default(cuid())
+  type         AlertType
+  severity     AlertSeverity @default(MEDIUM)
+  title        String
+  message      String
+  ingredientId String?
+  ingredient   Ingredient?   @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  isRead       Boolean       @default(false)
+  metadata     Json?
+  createdAt    DateTime      @default(now())
+
+  @@index([isRead])
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum AlertType {
+  LOW_STOCK
+  NEAR_EXPIRY
+  RAPID_DEPLETION
+  CONSUMPTION_ANOMALY
+  PREDICTIVE_SHORTAGE
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
