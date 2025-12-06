@@ -4,6 +4,7 @@ import { useCartStore } from '@/lib/store/cart-store';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { ArrowLeft, Trash2 } from 'lucide-react';
+import { CartUpsellSuggestions } from '@/components/cart-upsell-suggestions';
 
 export default function CartPage() {
   const { items, updateQuantity, removeItem, getTotal, clearCart } = useCartStore();
@@ -96,6 +97,8 @@ export default function CartPage() {
             </div>
           ))}
         </div>
+
+        <CartUpsellSuggestions />
 
         <div className="mt-6 bg-white rounded-2xl shadow-lg p-6">
           <div className="flex justify-between items-center text-2xl font-bold mb-6">

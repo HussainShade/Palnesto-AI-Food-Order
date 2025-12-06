@@ -1,8 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { triggerInventoryAnalysis } from '@/app/actions/inventory-actions';
-import toast from 'react-hot-toast';
 import type { Ingredient } from '@prisma/client';
 
 interface InventoryTableProps {
@@ -19,19 +17,9 @@ const formatDate = (date: Date | string): string => {
 };
 
 export function InventoryTable({ ingredients }: InventoryTableProps) {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  const handleAnalyze = async () => {
-    setIsAnalyzing(true);
-    try {
-      const result = await triggerInventoryAnalysis();
-      toast.success(`Analysis complete! Created ${result.alertsCreated} alerts.`);
-    } catch {
-      toast.error('Failed to analyze inventory');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
+  // Use lazy initializer to calculate current time once during initialization
+  // This avoids calling impure functions during render
+  const [currentTime] = useState<number>(() => Date.now());
 
   const getStockStatus = (ingredient: Ingredient) => {
     if (ingredient.quantity <= 0) return { label: 'Out of Stock', color: 'bg-red-100 text-red-800' };
@@ -42,7 +30,7 @@ export function InventoryTable({ ingredients }: InventoryTableProps) {
   const getExpiryStatus = (ingredient: Ingredient) => {
     if (!ingredient.expiryDate) return null;
     const daysUntilExpiry = Math.ceil(
-      (new Date(ingredient.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      (new Date(ingredient.expiryDate).getTime() - currentTime) / (1000 * 60 * 60 * 24)
     );
     if (daysUntilExpiry < 0) return { label: 'Expired', color: 'bg-red-100 text-red-800' };
     if (daysUntilExpiry <= 3) return { label: 'Expiring Soon', color: 'bg-orange-100 text-orange-800' };
@@ -54,13 +42,6 @@ export function InventoryTable({ ingredients }: InventoryTableProps) {
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
       <div className="p-6 border-b flex items-center justify-between">
         <h2 className="text-xl font-bold">Ingredients</h2>
-        <button
-          onClick={handleAnalyze}
-          disabled={isAnalyzing}
-          className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer text-white font-semibold px-4 py-2 rounded-xl transition-colors"
-        >
-          {isAnalyzing ? 'Analyzing...' : '🔍 AI Analysis'}
-        </button>
       </div>
 
       <div className="overflow-x-auto">

@@ -1,6 +1,7 @@
 import { getFoodItems } from '@/app/actions/food-actions';
 import { FoodCard } from '@/components/food-card';
 import { CartButton } from '@/components/cart-button';
+import { MenuRecommendations } from '@/components/menu-recommendations';
 
 export default async function Home() {
   const foodItems = await getFoodItems();
@@ -18,6 +19,8 @@ export default async function Home() {
           <h2 className="text-2xl font-semibold text-gray-800 mb-2">Our Menu</h2>
           <p className="text-gray-600">Select your favorite items and add them to your cart</p>
         </div>
+
+        <MenuRecommendations />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {foodItems.map((item) => (

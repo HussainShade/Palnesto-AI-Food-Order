@@ -83,44 +83,52 @@ export function FoodTable({ foodItems }: FoodTableProps) {
                 </div>
 
                 <div className="border-t pt-3">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                    Ingredients ({food.ingredients.length}):
-                  </h4>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {food.ingredients.map((foodIngredient) => {
-                      const ingredient = foodIngredient.ingredient;
-                      const stockStatus =
-                        ingredient.quantity < ingredient.threshold
-                          ? ingredient.quantity <= 0
-                            ? 'text-red-600'
-                            : 'text-orange-600'
-                          : 'text-green-600';
-
+                  {(() => {
+                    // Filter out ingredients with 0.00 required quantity
+                    const activeIngredients = food.ingredients.filter(
+                      (fi) => {
+                        const qty = typeof fi.qtyRequired === 'number' 
+                          ? fi.qtyRequired 
+                          : parseFloat(String(fi.qtyRequired || '0'));
+                        // Filter out values that display as "0.00" when rounded to 2 decimal places
+                        const roundedValue = Number(qty.toFixed(2));
+                        return roundedValue > 0;
+                      }
+                    );
+                    
+                    if (activeIngredients.length === 0) {
                       return (
-                        <div
-                          key={foodIngredient.id}
-                          className="flex items-center justify-between text-xs bg-white p-2 rounded border border-gray-200"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 truncate">
-                              {ingredient.name}
-                            </p>
-                            <p className="text-gray-500">
-                              Required: {Number(foodIngredient.qtyRequired).toFixed(2)} {ingredient.unit}
-                            </p>
-                          </div>
-                          <div className="text-right ml-2">
-                            <p className={`font-semibold ${stockStatus}`}>
-                              {Number(ingredient.quantity).toFixed(2)} {ingredient.unit}
-                            </p>
-                            <p className="text-gray-400 text-xs">
-                              Threshold: {Number(ingredient.threshold).toFixed(2)} {ingredient.unit}
-                            </p>
-                          </div>
-                        </div>
+                        <p className="text-sm text-gray-500 italic">No ingredients required</p>
                       );
-                    })}
-                  </div>
+                    }
+                    
+                    return (
+                      <>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                          Ingredients ({activeIngredients.length}):
+                        </h4>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {activeIngredients.map((foodIngredient) => {
+                            const ingredient = foodIngredient.ingredient;
+
+                            return (
+                              <div
+                                key={foodIngredient.id}
+                                className="text-xs bg-white p-2 rounded border border-gray-200"
+                              >
+                                <p className="font-medium text-gray-900 truncate">
+                                  {ingredient.name}
+                                </p>
+                                <p className="text-gray-500">
+                                  Required: {Number(foodIngredient.qtyRequired).toFixed(2)} {ingredient.unit}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             ))}

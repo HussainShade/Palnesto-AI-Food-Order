@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
 
 interface AIInsightsProps {
@@ -8,37 +8,42 @@ interface AIInsightsProps {
 }
 
 export function AIInsights({ getInsight }: AIInsightsProps) {
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [insight, setInsight] = useState<{ insight: string; type: string } | null>(null);
+  const [hasTriggered, setHasTriggered] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
+  const handleAnalyze = async () => {
+    setHasTriggered(true);
 
     const fetchInsight = async () => {
       try {
         setIsLoading(true);
         const result = await getInsight();
-        if (mounted && result) {
+        if (result) {
           setInsight(result);
-          // Toast notifications removed - only show inline panel
         }
       } catch (error) {
         console.error('Error fetching AI insight:', error);
       } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     };
 
-    // Delay to avoid blocking page load
-    const timeoutId = setTimeout(fetchInsight, 500);
+    await fetchInsight();
+  };
 
-    return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
-    };
-  }, [getInsight]);
+  // Show trigger button if not yet triggered
+  if (!hasTriggered) {
+    return (
+      <button
+        onClick={handleAnalyze}
+        className="mb-4 flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-6 py-3 rounded-xl transition-all shadow-lg hover:shadow-xl cursor-pointer"
+      >
+        <Sparkles className="w-5 h-5" />
+        🔍 AI Analysis
+      </button>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -49,7 +54,20 @@ export function AIInsights({ getInsight }: AIInsightsProps) {
     );
   }
 
-  if (!insight) return null;
+  if (!insight) {
+    return (
+      <div className="mb-4">
+        <button
+          onClick={handleAnalyze}
+          className="mb-2 flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-6 py-3 rounded-xl transition-all shadow-lg hover:shadow-xl cursor-pointer"
+        >
+          <Sparkles className="w-5 h-5" />
+          🔍 AI Analysis
+        </button>
+        <div className="text-sm text-gray-500">No insights available at this time.</div>
+      </div>
+    );
+  }
 
   const bgColors = {
     success: 'bg-green-50 border-green-200',
@@ -70,12 +88,23 @@ export function AIInsights({ getInsight }: AIInsightsProps) {
       <div className="flex items-start gap-3">
         <Sparkles className={`w-5 h-5 ${textColors[insight.type as keyof typeof textColors]} flex-shrink-0 mt-0.5`} />
         <div className="flex-1">
-          <p className={`text-sm font-semibold mb-1 ${textColors[insight.type as keyof typeof textColors]}`}>
+          <p className={`text-sm font-semibold mb-2 ${textColors[insight.type as keyof typeof textColors]}`}>
             AI Insight
           </p>
-          <p className={`text-sm ${textColors[insight.type as keyof typeof textColors]}`}>
-            {insight.insight}
-          </p>
+          <div className={`text-sm ${textColors[insight.type as keyof typeof textColors]} space-y-1`}>
+            {insight.insight.split('\n').map((line, index) => {
+              const trimmedLine = line.trim();
+              if (!trimmedLine) return null;
+              // Remove leading bullet if present (AI might add it)
+              const cleanLine = trimmedLine.replace(/^[•\-\*]\s*/, '');
+              return (
+                <div key={index} className="flex items-start gap-2">
+                  <span className="flex-shrink-0">•</span>
+                  <span>{cleanLine}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
