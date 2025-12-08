@@ -307,11 +307,29 @@ Return JSON array:
       }));
     }
 
-    const response = await aiModel.client.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
-    const text = response.text;
+    let response;
+    let text;
+    try {
+      response = await aiModel.client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+      text = response.text;
+    } catch (apiError: any) {
+      // Handle quota errors gracefully - use fallback instead
+      if (apiError?.status === 429 || apiError?.error?.code === 429) {
+        // Quota exceeded - return fallback suggestions
+        return allFoods.slice(0, 3).map((food) => ({
+          foodId: food.id,
+          name: food.name,
+          reason: 'Perfect addition to complete your meal!',
+          image: food.image,
+          price: food.price,
+        }));
+      }
+      // For other errors, rethrow to be caught by outer catch
+      throw apiError;
+    }
 
     let jsonText = text.trim();
     if (jsonText.includes('```json')) {
@@ -369,9 +387,12 @@ Return JSON array:
     }
 
     return suggestions.slice(0, 3);
-  } catch (error) {
-    console.error('AI cart upsell error:', error);
-    // Fallback
+  } catch (error: any) {
+    // Suppress quota error logs - they're handled gracefully with fallback
+    if (error?.status !== 429 && error?.error?.code !== 429) {
+      console.error('AI cart upsell error:', error);
+    }
+    // Fallback: return first available items
     try {
       const allFoods = await prisma.foodItem.findMany({
         where: { id: { notIn: cartItemIds } },
@@ -393,22 +414,74 @@ Return JSON array:
 export async function getMenuRecommendations(): Promise<AISuggestion[]> {
   try {
     const allFoods = await prisma.foodItem.findMany({
-      take: 20,
+      include: {
+        ingredients: {
+          include: {
+            ingredient: true,
+          },
+        },
+        orderItems: true,
+      },
     });
 
     if (allFoods.length === 0) return [];
 
-    const recentOrders = await prisma.order.findMany({
-      take: 10,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        items: {
-          include: {
-            foodItem: true,
-          },
+    // Calculate order counts for each food item
+    const foodOrderCounts = new Map<string, number>();
+    for (const food of allFoods) {
+      const totalOrders = food.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+      foodOrderCounts.set(food.id, totalOrders);
+    }
+
+    // Get most ordered foods (top 10)
+    const mostOrderedFoods = Array.from(foodOrderCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([foodId]) => {
+        const food = allFoods.find((f) => f.id === foodId);
+        return food ? { name: food.name, orderCount: foodOrderCounts.get(foodId) || 0 } : null;
+      })
+      .filter((f): f is { name: string; orderCount: number } => f !== null);
+
+    // Find ingredients expiring soon (within next 7 days)
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    const expiringIngredients = await prisma.ingredient.findMany({
+      where: {
+        expiryDate: {
+          not: null,
+          lte: sevenDaysFromNow,
+          gte: new Date(), // Not expired yet
         },
       },
     });
+
+    // Find foods that use expiring ingredients
+    const foodsWithExpiringIngredients = allFoods
+      .filter((food) =>
+        food.ingredients.some((fi) =>
+          expiringIngredients.some((ei) => ei.id === fi.ingredientId)
+        )
+      )
+      .map((food) => {
+        const expiringIngredientNames = food.ingredients
+          .filter((fi) =>
+            expiringIngredients.some((ei) => ei.id === fi.ingredientId)
+          )
+          .map((fi) => {
+            const ing = expiringIngredients.find((ei) => ei.id === fi.ingredientId);
+            if (!ing || !ing.expiryDate) return null;
+            const daysUntilExpiry = Math.ceil(
+              (new Date(ing.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            );
+            return `${ing.name} (expires in ${daysUntilExpiry} days)`;
+          })
+          .filter((name): name is string => name !== null);
+        return {
+          name: food.name,
+          expiringIngredients: expiringIngredientNames,
+        };
+      });
 
     const hour = new Date().getHours();
     const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
@@ -418,16 +491,21 @@ export async function getMenuRecommendations(): Promise<AISuggestion[]> {
 Available menu items:
 ${allFoods.map((f) => `- ${f.name}: ${f.description} - ₹${f.price.toFixed(2)}`).join('\n')}
 
-Recent popular orders:
-${recentOrders.slice(0, 5).map((order) => 
-  order.items.map((item) => `${item.quantity}x ${item.foodItem.name}`).join(', ')
-).join('\n')}
+Most ordered foods (priority to recommend these):
+${mostOrderedFoods.map((f) => `- ${f.name} (ordered ${f.orderCount} times)`).join('\n')}
 
-Suggest items based on:
-- Time of day appropriateness
-- Popular items from recent orders
-- Variety (mix of starters, mains, drinks)
-- Value and quality
+Foods with ingredients expiring soon (priority to recommend these to reduce waste):
+${foodsWithExpiringIngredients.length > 0
+  ? foodsWithExpiringIngredients
+      .map((f) => `- ${f.name} (uses: ${f.expiringIngredients.join(', ')})`)
+      .join('\n')
+  : 'None'}
+
+IMPORTANT: Prioritize recommendations in this order:
+1. Foods with ingredients expiring soon (to reduce waste)
+2. Most ordered foods (customer favorites)
+3. Time of day appropriateness
+4. Variety (mix of starters, mains, drinks)
 
 Return JSON array:
 [
@@ -439,21 +517,83 @@ Return JSON array:
 
     const aiModel = await getAIModel();
     if (!aiModel) {
-      // Fallback: return first 5 items
-      return allFoods.slice(0, 5).map((food) => ({
-        foodId: food.id,
-        name: food.name,
-        reason: 'Popular choice!',
-        image: food.image,
-        price: food.price,
-      }));
+      // Fallback: prioritize foods with expiring ingredients, then most ordered
+      const prioritizedFoods = [...allFoods].sort((a, b) => {
+        const aHasExpiring = foodsWithExpiringIngredients.some((f) => f.name === a.name);
+        const bHasExpiring = foodsWithExpiringIngredients.some((f) => f.name === b.name);
+        
+        if (aHasExpiring && !bHasExpiring) return -1;
+        if (!aHasExpiring && bHasExpiring) return 1;
+        
+        const aOrders = foodOrderCounts.get(a.id) || 0;
+        const bOrders = foodOrderCounts.get(b.id) || 0;
+        return bOrders - aOrders;
+      });
+
+      return prioritizedFoods.slice(0, 5).map((food) => {
+        const hasExpiring = foodsWithExpiringIngredients.some((f) => f.name === food.name);
+        const orderCount = foodOrderCounts.get(food.id) || 0;
+        let reason = 'Popular choice!';
+        if (hasExpiring) {
+          reason = 'Fresh ingredients available now!';
+        } else if (orderCount > 0) {
+          reason = `Ordered ${orderCount} times - Customer favorite!`;
+        }
+        return {
+          foodId: food.id,
+          name: food.name,
+          reason,
+          image: food.image,
+          price: food.price,
+        };
+      });
     }
 
-    const response = await aiModel.client.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
-    const text = response.text;
+    let response;
+    let text;
+    try {
+      response = await aiModel.client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+      text = response.text;
+    } catch (apiError: any) {
+      // Handle quota errors gracefully - use fallback instead
+      if (apiError?.status === 429 || apiError?.error?.code === 429) {
+        // Quota exceeded - use fallback logic (prioritize expiring ingredients, then most ordered)
+        const prioritizedFoods = [...allFoods].sort((a, b) => {
+          const aHasExpiring = foodsWithExpiringIngredients.some((f) => f.name === a.name);
+          const bHasExpiring = foodsWithExpiringIngredients.some((f) => f.name === b.name);
+          
+          if (aHasExpiring && !bHasExpiring) return -1;
+          if (!aHasExpiring && bHasExpiring) return 1;
+          
+          const aOrders = foodOrderCounts.get(a.id) || 0;
+          const bOrders = foodOrderCounts.get(b.id) || 0;
+          return bOrders - aOrders;
+        });
+
+        return prioritizedFoods.slice(0, 5).map((food) => {
+          const hasExpiring = foodsWithExpiringIngredients.some((f) => f.name === food.name);
+          const orderCount = foodOrderCounts.get(food.id) || 0;
+          let reason = 'Popular choice!';
+          if (hasExpiring) {
+            reason = 'Fresh ingredients available now!';
+          } else if (orderCount > 0) {
+            reason = `Ordered ${orderCount} times - Customer favorite!`;
+          }
+          return {
+            foodId: food.id,
+            name: food.name,
+            reason,
+            image: food.image,
+            price: food.price,
+          };
+        });
+      }
+      // For other errors, rethrow to be caught by outer catch
+      throw apiError;
+    }
 
     let jsonText = text.trim();
     if (jsonText.includes('```json')) {
@@ -494,16 +634,35 @@ Return JSON array:
       }
     }
 
-    // Fill remaining slots if needed
+    // Fill remaining slots if needed, prioritizing expiring ingredients and most ordered
     if (suggestions.length < 3) {
       const remaining = allFoods
         .filter((f) => !suggestions.some((s) => s.foodId === f.id))
+        .sort((a, b) => {
+          const aHasExpiring = foodsWithExpiringIngredients.some((f) => f.name === a.name);
+          const bHasExpiring = foodsWithExpiringIngredients.some((f) => f.name === b.name);
+          
+          if (aHasExpiring && !bHasExpiring) return -1;
+          if (!aHasExpiring && bHasExpiring) return 1;
+          
+          const aOrders = foodOrderCounts.get(a.id) || 0;
+          const bOrders = foodOrderCounts.get(b.id) || 0;
+          return bOrders - aOrders;
+        })
         .slice(0, 5 - suggestions.length);
       for (const food of remaining) {
+        const hasExpiring = foodsWithExpiringIngredients.some((f) => f.name === food.name);
+        const orderCount = foodOrderCounts.get(food.id) || 0;
+        let reason = 'Popular choice!';
+        if (hasExpiring) {
+          reason = 'Fresh ingredients available now!';
+        } else if (orderCount > 0) {
+          reason = `Ordered ${orderCount} times - Customer favorite!`;
+        }
         suggestions.push({
           foodId: food.id,
           name: food.name,
-          reason: 'Popular choice!',
+          reason,
           image: food.image,
           price: food.price,
         });
@@ -511,18 +670,84 @@ Return JSON array:
     }
 
     return suggestions.slice(0, 5);
-  } catch (error) {
-    console.error('AI menu recommendations error:', error);
-    // Fallback
+  } catch (error: any) {
+    // Suppress quota error logs - they're handled gracefully with fallback
+    if (error?.status !== 429 && error?.error?.code !== 429) {
+      console.error('AI menu recommendations error:', error);
+    }
+    // Fallback: return foods prioritized by expiring ingredients and order count
     try {
-      const allFoods = await prisma.foodItem.findMany({ take: 5 });
-      return allFoods.map((food) => ({
-        foodId: food.id,
-        name: food.name,
-        reason: 'Popular choice!',
-        image: food.image,
-        price: food.price,
-      }));
+      const allFoods = await prisma.foodItem.findMany({
+        include: {
+          ingredients: {
+            include: {
+              ingredient: true,
+            },
+          },
+          orderItems: true,
+        },
+      });
+
+      if (allFoods.length === 0) return [];
+
+      // Calculate order counts
+      const foodOrderCounts = new Map<string, number>();
+      for (const food of allFoods) {
+        const totalOrders = food.orderItems.reduce((sum, item) => sum + item.quantity, 0);
+        foodOrderCounts.set(food.id, totalOrders);
+      }
+
+      // Find expiring ingredients
+      const sevenDaysFromNow = new Date();
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+      const expiringIngredients = await prisma.ingredient.findMany({
+        where: {
+          expiryDate: {
+            not: null,
+            lte: sevenDaysFromNow,
+            gte: new Date(),
+          },
+        },
+      });
+
+      const foodsWithExpiringIngredients = allFoods
+        .filter((food) =>
+          food.ingredients.some((fi) =>
+            expiringIngredients.some((ei) => ei.id === fi.ingredientId)
+          )
+        )
+        .map((food) => food.name);
+
+      // Prioritize: expiring ingredients first, then most ordered
+      const prioritizedFoods = [...allFoods].sort((a, b) => {
+        const aHasExpiring = foodsWithExpiringIngredients.includes(a.name);
+        const bHasExpiring = foodsWithExpiringIngredients.includes(b.name);
+        
+        if (aHasExpiring && !bHasExpiring) return -1;
+        if (!aHasExpiring && bHasExpiring) return 1;
+        
+        const aOrders = foodOrderCounts.get(a.id) || 0;
+        const bOrders = foodOrderCounts.get(b.id) || 0;
+        return bOrders - aOrders;
+      });
+
+      return prioritizedFoods.slice(0, 5).map((food) => {
+        const hasExpiring = foodsWithExpiringIngredients.includes(food.name);
+        const orderCount = foodOrderCounts.get(food.id) || 0;
+        let reason = 'Popular choice!';
+        if (hasExpiring) {
+          reason = 'Fresh ingredients available now!';
+        } else if (orderCount > 0) {
+          reason = `Ordered ${orderCount} times - Customer favorite!`;
+        }
+        return {
+          foodId: food.id,
+          name: food.name,
+          reason,
+          image: food.image,
+          price: food.price,
+        };
+      });
     } catch {
       return [];
     }

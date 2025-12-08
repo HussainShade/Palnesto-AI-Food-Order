@@ -15,6 +15,7 @@ export function CartUpsellSuggestions() {
   useEffect(() => {
     if (items.length === 0) {
       setLoading(false);
+      setSuggestions([]);
       return;
     }
 
@@ -24,8 +25,13 @@ export function CartUpsellSuggestions() {
         const cartItemIds = items.map((item) => item.foodItemId);
         const upsells = await getCartUpsells(cartItemIds);
         setSuggestions(upsells);
-      } catch (error) {
-        console.error('Error fetching upsell suggestions:', error);
+      } catch (error: any) {
+        // Suppress quota error logs - fallback logic handles it gracefully
+        if (error?.status !== 429 && error?.error?.code !== 429) {
+          console.error('Error fetching upsell suggestions:', error);
+        }
+        // Fallback suggestions are already returned from server
+        setSuggestions([]);
       } finally {
         setLoading(false);
       }
@@ -36,18 +42,48 @@ export function CartUpsellSuggestions() {
     return () => clearTimeout(timeoutId);
   }, [items]);
 
-  if (items.length === 0 || loading || suggestions.length === 0) {
-    return null;
-  }
-
   const handleAddToCart = (suggestion: AISuggestion) => {
+    // Set loading immediately when item is added
+    setLoading(true);
     addItem({
       foodItemId: suggestion.foodId,
       name: suggestion.name,
       price: suggestion.price,
       image: suggestion.image,
     });
+    // The useEffect will trigger automatically when items change
   };
+
+  // Don't show anything if cart is empty
+  if (items.length === 0) {
+    return null;
+  }
+
+  // Show loading state with AI loader
+  if (loading) {
+    return (
+      <div className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl shadow-lg p-6 border border-blue-200">
+        <div className="flex items-center gap-2 mb-4">
+          <Sparkles className="w-5 h-5 text-blue-600 animate-pulse" />
+          <h3 className="text-lg font-bold text-gray-900">Complete Your Meal</h3>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative">
+              <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+              <Sparkles className="w-6 h-6 text-blue-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+            </div>
+            <p className="text-sm text-gray-600 font-medium">AI is finding perfect suggestions for your cart...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't show if no suggestions
+  if (suggestions.length === 0) {
+    return null;
+  }
 
   return (
     <div className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl shadow-lg p-6 border border-blue-200">
