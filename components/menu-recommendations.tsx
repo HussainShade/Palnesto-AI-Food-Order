@@ -20,9 +20,10 @@ export function MenuRecommendations() {
         setLoading(true);
         const recs = await getMenuRecs();
         setSuggestions(recs);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Suppress quota error logs - fallback logic handles it gracefully
-        if (error?.status !== 429 && error?.error?.code !== 429) {
+        const apiError = error as { status?: number; error?: { code?: number } };
+        if (apiError?.status !== 429 && apiError?.error?.code !== 429) {
           console.error('Error fetching menu recommendations:', error);
         }
         // Fallback recommendations are already returned from server

@@ -315,9 +315,10 @@ Return JSON array:
         contents: prompt,
       });
       text = response.text;
-    } catch (apiError: any) {
+    } catch (apiError: unknown) {
       // Handle quota errors gracefully - use fallback instead
-      if (apiError?.status === 429 || apiError?.error?.code === 429) {
+      const error = apiError as { status?: number; error?: { code?: number } };
+      if (error?.status === 429 || error?.error?.code === 429) {
         // Quota exceeded - return fallback suggestions
         return allFoods.slice(0, 3).map((food) => ({
           foodId: food.id,
@@ -387,9 +388,10 @@ Return JSON array:
     }
 
     return suggestions.slice(0, 3);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Suppress quota error logs - they're handled gracefully with fallback
-    if (error?.status !== 429 && error?.error?.code !== 429) {
+    const apiError = error as { status?: number; error?: { code?: number } };
+    if (apiError?.status !== 429 && apiError?.error?.code !== 429) {
       console.error('AI cart upsell error:', error);
     }
     // Fallback: return first available items
@@ -557,9 +559,10 @@ Return JSON array:
         contents: prompt,
       });
       text = response.text;
-    } catch (apiError: any) {
+    } catch (apiError: unknown) {
       // Handle quota errors gracefully - use fallback instead
-      if (apiError?.status === 429 || apiError?.error?.code === 429) {
+      const error = apiError as { status?: number; error?: { code?: number } };
+      if (error?.status === 429 || error?.error?.code === 429) {
         // Quota exceeded - use fallback logic (prioritize expiring ingredients, then most ordered)
         const prioritizedFoods = [...allFoods].sort((a, b) => {
           const aHasExpiring = foodsWithExpiringIngredients.some((f) => f.name === a.name);
@@ -670,9 +673,10 @@ Return JSON array:
     }
 
     return suggestions.slice(0, 5);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Suppress quota error logs - they're handled gracefully with fallback
-    if (error?.status !== 429 && error?.error?.code !== 429) {
+    const apiError = error as { status?: number; error?: { code?: number } };
+    if (apiError?.status !== 429 && apiError?.error?.code !== 429) {
       console.error('AI menu recommendations error:', error);
     }
     // Fallback: return foods prioritized by expiring ingredients and order count

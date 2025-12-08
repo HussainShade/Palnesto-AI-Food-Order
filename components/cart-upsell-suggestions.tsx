@@ -25,9 +25,10 @@ export function CartUpsellSuggestions() {
         const cartItemIds = items.map((item) => item.foodItemId);
         const upsells = await getCartUpsells(cartItemIds);
         setSuggestions(upsells);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Suppress quota error logs - fallback logic handles it gracefully
-        if (error?.status !== 429 && error?.error?.code !== 429) {
+        const apiError = error as { status?: number; error?: { code?: number } };
+        if (apiError?.status !== 429 && apiError?.error?.code !== 429) {
           console.error('Error fetching upsell suggestions:', error);
         }
         // Fallback suggestions are already returned from server
