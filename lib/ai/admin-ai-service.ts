@@ -1,4 +1,5 @@
 import { getAIClient } from './config';
+import { logger } from '@/lib/services/logger';
 
 const getAIModel = async () => {
   const client = getAIClient();
@@ -8,6 +9,24 @@ const getAIModel = async () => {
   // Client is ready to use - no need to get model separately
   // We'll use client.models.generateContent() directly
   return { client };
+};
+
+/**
+ * Check if error is a quota/rate limit error (429)
+ */
+const isQuotaError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  
+  // Check for ApiError with status 429
+  if ('status' in error && error.status === 429) return true;
+  
+  // Check for error object with code 429
+  if ('error' in error && typeof error.error === 'object' && error.error !== null) {
+    if ('code' in error.error && error.error.code === 429) return true;
+    if ('status' in error.error && error.error.status === 'RESOURCE_EXHAUSTED') return true;
+  }
+  
+  return false;
 };
 
 export async function analyzeFoodInsights(foodItems: unknown[]) {
@@ -80,11 +99,24 @@ Return JSON only:
       };
     }
   } catch (error) {
-    console.error('AI food analysis error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for food insights');
       return {
         insight: '• All items configured\n• Menu is balanced\n• No action needed',
         type: 'info',
       };
+    }
+    
+    // Log other errors but still return fallback
+    logger.error('AI food analysis error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    
+    return {
+      insight: '• All items configured\n• Menu is balanced\n• No action needed',
+      type: 'info',
+    };
   }
 }
 
@@ -158,11 +190,24 @@ Return JSON only:
       };
     }
   } catch (error) {
-    console.error('AI inventory analysis error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for inventory insights');
       return {
         insight: '• Monitor inventory levels\n• Maintain optimal stock\n• Check regularly',
         type: 'info',
       };
+    }
+    
+    // Log other errors but still return fallback
+    logger.error('AI inventory analysis error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    
+    return {
+      insight: '• Monitor inventory levels\n• Maintain optimal stock\n• Check regularly',
+      type: 'info',
+    };
   }
 }
 
@@ -236,11 +281,24 @@ Return JSON only:
       };
     }
   } catch (error) {
-    console.error('AI order analysis error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for order insights');
       return {
         insight: '• Monitor order trends\n• Focus on growth\n• Track patterns',
         type: 'info',
       };
+    }
+    
+    // Log other errors but still return fallback
+    logger.error('AI order analysis error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    
+    return {
+      insight: '• Monitor order trends\n• Focus on growth\n• Track patterns',
+      type: 'info',
+    };
   }
 }
 

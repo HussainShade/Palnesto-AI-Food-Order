@@ -42,6 +42,11 @@ model Ingredient {
   aiAlerts      AIAlert[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+
+  @@index([quantity])
+  @@index([threshold])
+  @@index([expiryDate])
+  @@index([quantity, threshold])
 }
 
 model FoodIngredient {
@@ -67,6 +72,7 @@ model Order {
 
   @@index([createdAt])
   @@index([status])
+  @@index([status, createdAt])
 }
 
 model OrderItem {
@@ -97,6 +103,8 @@ model AIAlert {
   @@index([isRead])
   @@index([type])
   @@index([createdAt])
+  @@index([isRead, createdAt])
+  @@index([ingredientId])
 }
 
 enum OrderStatus {

@@ -1,62 +1,36 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { foodService } from '@/lib/services/food-service';
+import { logger } from '@/lib/services/logger';
 import type { FoodItemWithIngredients } from '@/lib/types';
 
+/**
+ * Get all food items (server action)
+ * Delegates to FoodService for business logic and caching
+ */
 export async function getFoodItems(): Promise<FoodItemWithIngredients[]> {
   try {
-    const items = await prisma.foodItem.findMany({
-      include: {
-        ingredients: {
-          include: {
-            ingredient: true,
-          },
-        },
-      },
-      orderBy: {
-        name: 'asc',
-      },
-    });
-
-    return items.map((item) => ({
-      ...item,
-      ingredients: item.ingredients.map((fi) => ({
-        id: fi.id,
-        qtyRequired: fi.qtyRequired,
-        ingredient: fi.ingredient,
-      })),
-    }));
+    return await foodService.getFoodItems();
   } catch (error) {
-    console.error('Error fetching food items:', error);
+    logger.error('Failed to fetch food items in action', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw new Error('Failed to fetch food items');
   }
 }
 
+/**
+ * Get food item by ID (server action)
+ * Delegates to FoodService for business logic and caching
+ */
 export async function getFoodItemById(id: string): Promise<FoodItemWithIngredients | null> {
   try {
-    const item = await prisma.foodItem.findUnique({
-      where: { id },
-      include: {
-        ingredients: {
-          include: {
-            ingredient: true,
-          },
-        },
-      },
-    });
-
-    if (!item) return null;
-
-    return {
-      ...item,
-      ingredients: item.ingredients.map((fi) => ({
-        id: fi.id,
-        qtyRequired: fi.qtyRequired,
-        ingredient: fi.ingredient,
-      })),
-    };
+    return await foodService.getFoodItemById(id);
   } catch (error) {
-    console.error('Error fetching food item:', error);
+    logger.error('Failed to fetch food item in action', {
+      error: error instanceof Error ? error.message : String(error),
+      foodItemId: id,
+    });
     return null;
   }
 }

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import type { AISuggestion } from '@/lib/types';
 import { getAIClient } from './config';
+import { logger } from '@/lib/services/logger';
 
 const getAIModel = async () => {
   const client = getAIClient();
@@ -10,6 +11,24 @@ const getAIModel = async () => {
   // Client is ready to use - no need to get model separately
   // We'll use client.models.generateContent() directly
   return { client };
+};
+
+/**
+ * Check if error is a quota/rate limit error (429)
+ */
+const isQuotaError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  
+  // Check for ApiError with status 429
+  if ('status' in error && error.status === 429) return true;
+  
+  // Check for error object with code 429
+  if ('error' in error && typeof error.error === 'object' && error.error !== null) {
+    if ('code' in error.error && error.error.code === 429) return true;
+    if ('status' in error.error && error.error.status === 'RESOURCE_EXHAUSTED') return true;
+  }
+  
+  return false;
 };
 
 export async function suggestPairing(foodId: string): Promise<AISuggestion | null> {
@@ -128,7 +147,14 @@ Respond in JSON format:
       price: suggestedFood.price,
     };
   } catch (error) {
-    console.error('AI pairing suggestion error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for pairing suggestion');
+    } else {
+      logger.error('AI pairing suggestion error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     // Fallback to first available food
     try {
       const allFoods = await prisma.foodItem.findMany({
@@ -248,7 +274,14 @@ Identify and return JSON array of alerts:
     const alerts = JSON.parse(text);
     return alerts;
   } catch (error) {
-    console.error('AI inventory analysis error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for inventory analysis');
+    } else {
+      logger.error('AI inventory analysis error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return [];
   }
 }
@@ -389,10 +422,13 @@ Return JSON array:
 
     return suggestions.slice(0, 3);
   } catch (error: unknown) {
-    // Suppress quota error logs - they're handled gracefully with fallback
-    const apiError = error as { status?: number; error?: { code?: number } };
-    if (apiError?.status !== 429 && apiError?.error?.code !== 429) {
-      console.error('AI cart upsell error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for cart upsell');
+    } else {
+      logger.error('AI cart upsell error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     // Fallback: return first available items
     try {
@@ -674,10 +710,13 @@ Return JSON array:
 
     return suggestions.slice(0, 5);
   } catch (error: unknown) {
-    // Suppress quota error logs - they're handled gracefully with fallback
-    const apiError = error as { status?: number; error?: { code?: number } };
-    if (apiError?.status !== 429 && apiError?.error?.code !== 429) {
-      console.error('AI menu recommendations error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for menu recommendations');
+    } else {
+      logger.error('AI menu recommendations error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     // Fallback: return foods prioritized by expiring ingredients and order count
     try {
@@ -876,7 +915,14 @@ Return JSON array:
 
     return suggestions.slice(0, 3);
   } catch (error) {
-    console.error('AI next order suggestions error:', error);
+    // Handle quota errors gracefully - use fallback instead
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, using fallback for next order suggestions');
+    } else {
+      logger.error('AI next order suggestions error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     // Fallback
     try {
       const order = await prisma.order.findUnique({
@@ -994,7 +1040,14 @@ Generate alerts if any thresholds are breached or anomalies detected. Return JSO
       });
     }
   } catch (error) {
-    console.error('AI post-order screening error:', error);
+    // Handle quota errors gracefully - non-blocking operation
+    if (isQuotaError(error)) {
+      logger.debug('AI quota exceeded, skipping post-order screening');
+    } else {
+      logger.error('AI post-order screening error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 
